@@ -20,7 +20,7 @@ class Lot(Base):
     price = Column(Numeric, nullable=False, default=0)
     name = Column(String, nullable=False)
     status = Column(String, default="active")
-    end_time = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(minutes=1))
+    end_time = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(minutes=182))
 
 Base.metadata.create_all(bind=engine)
 
@@ -95,7 +95,7 @@ async def websocket_lot(websocket: WebSocket, lot_id: int):
 # ---------- Ендпоінти ----------
 @app.post("/lots/", response_model=LotOut)
 async def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
-    new_lot = Lot(name=lot.name, price=lot.price, status="active", end_time=datetime.utcnow() + timedelta(minutes=5))
+    new_lot = Lot(name=lot.name, price=lot.price, status="active")
     db.add(new_lot)
     db.commit()
     db.refresh(new_lot)
@@ -113,7 +113,7 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="Bet must be higher than current price")
 
     lot.price = bet_req.bet
-    lot.end_time = datetime.utcnow() + timedelta(seconds=30)
+    lot.end_time = datetime.utcnow() + timedelta(seconds=30, hours=3)
     db.commit()
     db.refresh(lot)
 
