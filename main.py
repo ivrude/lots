@@ -20,7 +20,7 @@ class Lot(Base):
     price = Column(Numeric, nullable=False, default=0)
     name = Column(String, nullable=False)
     status = Column(String, default="active")
-    end_time = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(minutes=182))
+    end_time = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(minutes=2))
 
 Base.metadata.create_all(bind=engine)
 
@@ -119,7 +119,7 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
 
     # надсилаємо оновлення WebSocket
 
-    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}, ends at {lot.end_time.isoformat()}")
+    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}, ends at {lot.end_time.isoformat()+timedelta(hours=3)}")
 
     return lot
 
