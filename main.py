@@ -88,7 +88,7 @@ def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
     return new_lot
 
 @app.post("/lots/{lot_id}/bet", response_model=LotOut)
-def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_db)):
+async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_db)):
     lot = db.query(Lot).filter(Lot.id == lot_id).first()
     if not lot:
         raise HTTPException(status_code=404, detail="Lot not found")
