@@ -1,25 +1,26 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Numeric, create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from typing import Dict, Set
+import asyncio
 
-# ---------- Налаштування бази ----------
 DATABASE_URL = "postgresql://admin:admin@db:5432/test_db"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ---------- Модель БД ----------
+# ---------- Модель ----------
 class Lot(Base):
     __tablename__ = "lots"
-
     id = Column(Integer, primary_key=True, index=True)
     price = Column(Numeric, nullable=False, default=0)
     name = Column(String, nullable=False)
     status = Column(String, default="active")
 
 Base.metadata.create_all(bind=engine)
+
 # ---------- Pydantic схеми ----------
 class LotCreate(BaseModel):
     name: str
@@ -30,7 +31,6 @@ class LotOut(BaseModel):
     name: str
     price: float
     status: str
-
     class Config:
         orm_mode = True
 
@@ -40,13 +40,29 @@ class BetRequest(BaseModel):
 # ---------- FastAPI ----------
 app = FastAPI()
 
-# Dependency для сесії
+# ---------- Dependency ----------
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+# ---------- WebSocket ----------
+lot_connections: Dict[int, Set[WebSocket]] = {}
+
+@app.websocket("/ws/lots/{lot_id}")
+async def websocket_lot(websocket: WebSocket, lot_id: int):
+    await websocket.accept()
+    lot_id = int(lot_id)
+    if lot_id not in lot_connections:
+        lot_connections[lot_id] = set()
+    lot_connections[lot_id].add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # просто чекаємо повідомлення
+    except WebSocketDisconnect:
+        lot_connections[lot_id].remove(websocket)
 
 # ---------- Ендпоінти ----------
 @app.post("/lots/", response_model=LotOut)
@@ -70,6 +86,16 @@ def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_db)):
     lot.price = bet_req.bet
     db.commit()
     db.refresh(lot)
+
+    # надсилаємо оновлення WebSocket
+    if lot_id in lot_connections:
+        websockets = list(lot_connections[lot_id])
+        for ws in websockets:
+            try:
+                asyncio.create_task(ws.send_json({"id": lot.id, "price": float(lot.price)}))
+            except:
+                lot_connections[lot_id].remove(ws)
+
     return lot
 
 @app.get("/lots/{lot_id}", response_model=LotOut)
