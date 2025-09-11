@@ -118,8 +118,8 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
     db.refresh(lot)
 
     # надсилаємо оновлення WebSocket
-
-    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}, ends at {lot.end_time.isoformat()+timedelta(hours=3)}")
+    ends_at = (lot.end_time + timedelta(hours=3)).isoformat()
+    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}, ends at {ends_at}")
 
     return lot
 
