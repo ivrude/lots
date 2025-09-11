@@ -128,7 +128,7 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
     message = {
         "type": "bid_placed",
         "lot_id": lot_id,
-        "amount": lot.price,
+        "amount": float(lot.price),
         "ends_at": ends_at,
     }
     await manager.broadcast(json.dumps(message))
