@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Numeric, create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
 # ---------- Налаштування бази ----------
-DATABASE_URL = "postgresql://admin:admin@localhost:5432/test_db"
+DATABASE_URL = "postgresql://admin:admin@db:5432/test_db"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
