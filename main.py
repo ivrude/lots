@@ -1,5 +1,4 @@
 import json
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Numeric, create_engine, DateTime
@@ -15,7 +14,7 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ---------- Модель ----------
+
 class Lot(Base):
     __tablename__ = "lots"
     id = Column(Integer, primary_key=True, index=True)
@@ -26,7 +25,7 @@ class Lot(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# ---------- Pydantic схеми ----------
+
 class LotCreate(BaseModel):
     name: str
     price: float = 0
@@ -43,26 +42,35 @@ class BetRequest(BaseModel):
     bet: float
     username : str
 
-# ---------- FastAPI ----------
+
 app = FastAPI()
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.lot_connections: Dict[int, Set[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, lot_id: int):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        if lot_id not in self.lot_connections:
+            self.lot_connections[lot_id] = set()
+        self.lot_connections[lot_id].add(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    def disconnect(self, websocket: WebSocket, lot_id: int):
+        if lot_id in self.lot_connections:
+            self.lot_connections[lot_id].discard(websocket)
+            if not self.lot_connections[lot_id]:
+                del self.lot_connections[lot_id]
 
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
+    async def broadcast(self, lot_id: int, message: str):
+        if lot_id in self.lot_connections:
+            for connection in self.lot_connections[lot_id]:
+                await connection.send_text(message)
+
 
 manager = ConnectionManager()
-# ---------- Dependency ----------
+
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -83,10 +91,12 @@ async def lot_timer(lot_id: int, db: Session):
                 "type": "lot_closed",
                 "lot_id": lot_id,
             }
-            await manager.broadcast(json.dumps(message))
+            await manager.broadcast(lot_id, json.dumps(message))
             break
         await asyncio.sleep(1)
-# ---------- WebSocket ----------
+
+
+# Websocket
 lot_connections: Dict[int, Set[WebSocket]] = {}
 
 @app.websocket("/ws/lots/{lot_id}")
@@ -97,9 +107,9 @@ async def websocket_lot(websocket: WebSocket, lot_id: int):
             data = await websocket.receive_text()
             await websocket.send_text(f"Echo: {data}")
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, lot_id)
 
-# ---------- Ендпоінти ----------
+#Endpoints
 @app.post("/lots/", response_model=LotOut)
 async def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
     new_lot = Lot(name=lot.name, price=lot.price, status="active")
@@ -109,7 +119,7 @@ async def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
     asyncio.create_task(lot_timer(new_lot.id, db))
     return new_lot
 
-@app.post("/lots/{lot_id}/bet", response_model=LotOut)
+@app.post("/lots/{lot_id}/bids", response_model=LotOut)
 async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_db)):
     lot = db.query(Lot).filter(Lot.id == lot_id).first()
     if not lot:
@@ -133,13 +143,13 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
         "username" : bet_req.username,
         "ends_at": ends_at,
     }
-    await manager.broadcast(json.dumps(message))
+    await manager.broadcast(lot_id, json.dumps(message))
 
     return lot
 
-@app.get("/lots/{lot_id}", response_model=LotOut)
-def get_lot(lot_id: int, db: Session = Depends(get_db)):
-    lot = db.query(Lot).filter(Lot.id == lot_id).first()
-    if not lot:
-        raise HTTPException(status_code=404, detail="Lot not found")
-    return lot
+@app.get("/lots", response_model=List[LotOut])
+def get_active_lots(db: Session = Depends(get_db)):
+    lots = db.query(Lot).filter(Lot.status == "active").all()
+    if not lots:
+        raise HTTPException(status_code=404, detail="Lots not found")
+    return lots
