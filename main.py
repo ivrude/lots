@@ -94,8 +94,8 @@ async def websocket_lot(websocket: WebSocket, lot_id: int):
 
 # ---------- Ендпоінти ----------
 @app.post("/lots/", response_model=LotOut)
-def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
-    new_lot = Lot(name=lot.name, price=lot.price, status="active")
+async def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
+    new_lot = Lot(name=lot.name, price=lot.price, status="active", end_time=datetime.utcnow() + timedelta(minutes=5))
     db.add(new_lot)
     db.commit()
     db.refresh(new_lot)
