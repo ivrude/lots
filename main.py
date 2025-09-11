@@ -1,10 +1,11 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Numeric, create_engine
+from sqlalchemy import Column, Integer, String, Numeric, create_engine, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from typing import Dict, Set
-from typing import List
+from typing import Dict, Set, List
 import asyncio
+from datetime import datetime, timedelta
+
 
 DATABASE_URL = "postgresql://admin:admin@db:5432/test_db"
 
@@ -19,6 +20,7 @@ class Lot(Base):
     price = Column(Numeric, nullable=False, default=0)
     name = Column(String, nullable=False)
     status = Column(String, default="active")
+    end_time = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(minutes=1))
 
 Base.metadata.create_all(bind=engine)
 
@@ -65,6 +67,18 @@ def get_db():
     finally:
         db.close()
 
+async def lot_timer(lot_id: int, db: Session):
+    while True:
+        lot = db.query(Lot).filter(Lot.id == lot_id).first()
+        if not lot or lot.status != "active":
+            break
+        now = datetime.utcnow()
+        if lot.end_time <= now:
+            lot.status = "closed"
+            db.commit()
+            await manager.broadcast(f"Lot {lot_id} closed!")
+            break
+        await asyncio.sleep(1)
 # ---------- WebSocket ----------
 lot_connections: Dict[int, Set[WebSocket]] = {}
 
@@ -85,6 +99,7 @@ def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
     db.add(new_lot)
     db.commit()
     db.refresh(new_lot)
+    asyncio.create_task(lot_timer(new_lot.id, db))
     return new_lot
 
 @app.post("/lots/{lot_id}/bet", response_model=LotOut)
@@ -98,18 +113,13 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="Bet must be higher than current price")
 
     lot.price = bet_req.bet
+    lot.end_time = datetime.utcnow() + timedelta(seconds=30)
     db.commit()
     db.refresh(lot)
 
     # надсилаємо оновлення WebSocket
-    if lot_id in lot_connections:
-        websockets = list(lot_connections[lot_id])
-        for ws in websockets:
-            try:
-                asyncio.create_task(ws.send_json({"id": lot.id, "price": float(lot.price)}))
-            except:
-                lot_connections[lot_id].remove(ws)
-    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}")
+
+    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}, ends at {lot.end_time.isoformat()}")
 
     return lot
 
