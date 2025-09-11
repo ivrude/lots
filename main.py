@@ -19,6 +19,7 @@ class Lot(Base):
     name = Column(String, nullable=False)
     status = Column(String, default="active")
 
+Base.metadata.create_all(bind=engine)
 # ---------- Pydantic схеми ----------
 class LotCreate(BaseModel):
     name: str
