@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Numeric, create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from typing import Dict, Set
+from typing import List
 import asyncio
 
 DATABASE_URL = "postgresql://admin:admin@db:5432/test_db"
@@ -40,6 +41,22 @@ class BetRequest(BaseModel):
 # ---------- FastAPI ----------
 app = FastAPI()
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
 # ---------- Dependency ----------
 def get_db():
     db = SessionLocal()
@@ -53,16 +70,13 @@ lot_connections: Dict[int, Set[WebSocket]] = {}
 
 @app.websocket("/ws/lots/{lot_id}")
 async def websocket_lot(websocket: WebSocket, lot_id: int):
-    await websocket.accept()
-    lot_id = int(lot_id)
-    if lot_id not in lot_connections:
-        lot_connections[lot_id] = set()
-    lot_connections[lot_id].add(websocket)
+    await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()  # просто чекаємо повідомлення
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
     except WebSocketDisconnect:
-        lot_connections[lot_id].remove(websocket)
+        manager.disconnect(websocket)
 
 # ---------- Ендпоінти ----------
 @app.post("/lots/", response_model=LotOut)
@@ -95,6 +109,7 @@ def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_db)):
                 asyncio.create_task(ws.send_json({"id": lot.id, "price": float(lot.price)}))
             except:
                 lot_connections[lot_id].remove(ws)
+    asyncio.create_task(manager.broadcast(f"Lot {lot_id} new price: {lot.price}"))
 
     return lot
 
