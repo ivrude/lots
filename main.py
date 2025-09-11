@@ -109,7 +109,7 @@ def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_db)):
                 asyncio.create_task(ws.send_json({"id": lot.id, "price": float(lot.price)}))
             except:
                 lot_connections[lot_id].remove(ws)
-    asyncio.create_task(manager.broadcast(f"Lot {lot_id} new price: {lot.price}"))
+    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}")
 
     return lot
 
