@@ -113,7 +113,7 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="Bet must be higher than current price")
 
     lot.price = bet_req.bet
-    lot.end_time = datetime.utcnow() + timedelta(seconds=30, hours=3)
+    lot.end_time += timedelta(seconds=30)
     db.commit()
     db.refresh(lot)
 
