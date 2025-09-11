@@ -41,6 +41,7 @@ class LotOut(BaseModel):
 
 class BetRequest(BaseModel):
     bet: float
+    username : str
 
 # ---------- FastAPI ----------
 app = FastAPI()
@@ -129,6 +130,7 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
         "type": "bid_placed",
         "lot_id": lot_id,
         "amount": float(lot.price),
+        "username" : bet_req.username,
         "ends_at": ends_at,
     }
     await manager.broadcast(json.dumps(message))
