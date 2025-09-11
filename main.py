@@ -101,7 +101,7 @@ lot_connections: Dict[int, Set[WebSocket]] = {}
 
 @app.websocket("/ws/lots/{lot_id}")
 async def websocket_lot(websocket: WebSocket, lot_id: int):
-    await manager.connect(websocket)
+    await manager.connect(websocket, lot_id)
     try:
         while True:
             data = await websocket.receive_text()
