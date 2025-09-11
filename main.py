@@ -1,3 +1,5 @@
+import json
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Numeric, create_engine, DateTime
@@ -76,7 +78,11 @@ async def lot_timer(lot_id: int, db: Session):
         if lot.end_time <= now:
             lot.status = "closed"
             db.commit()
-            await manager.broadcast(f"Lot {lot_id} closed!")
+            message = {
+                "type": "lot_closed",
+                "lot_id": lot_id,
+            }
+            await manager.broadcast(json.dumps(message))
             break
         await asyncio.sleep(1)
 # ---------- WebSocket ----------
@@ -119,7 +125,13 @@ async def make_bet(lot_id: int, bet_req: BetRequest, db: Session = Depends(get_d
 
     # надсилаємо оновлення WebSocket
     ends_at = (lot.end_time + timedelta(hours=3)).isoformat()
-    await manager.broadcast(f"Lot {lot_id} new price: {lot.price}, ends at {ends_at}")
+    message = {
+        "type": "bid_placed",
+        "lot_id": lot_id,
+        "amount": lot.price,
+        "ends_at": ends_at,
+    }
+    await manager.broadcast(json.dumps(message))
 
     return lot
 
